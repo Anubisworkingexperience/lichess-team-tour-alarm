@@ -4,8 +4,37 @@ import './App.css'
 function App() {
   const inputValue = useRef(null);
   const [teamName, setTeamName] = useState("");
-  const [teamDescription, setTeamDescription] = useState("");
   const [numberOfMembers, setNumberOfMembers] = useState("");
+  
+  //read nd-json
+  const readStream = processLine => response => {
+    const stream = response.body.getReader();
+    const matcher = /\r?\n/;
+    const decoder = new TextDecoder();
+    let buf = '';
+  
+    const loop = () =>
+      stream.read().then(({ done, value }) => {
+        if (done) {
+          if (buf.length > 0) processLine(JSON.parse(buf));
+        } else {
+          const chunk = decoder.decode(value, {
+            stream: true
+          });
+          buf += chunk;
+  
+          const parts = buf.split(matcher);
+          buf = parts.pop();
+          for (const i of parts.filter(p => p)) processLine(JSON.parse(i));
+          return loop();
+        }
+      });
+  
+    return loop();
+  }
+
+  const onMessage = obj => console.log(obj);
+  const onComplete = () => console.log('The stream has completed');
   
   return (
     <>
@@ -20,16 +49,19 @@ function App() {
           .then(response => response.json().then(function(response) {
             console.log(response);
             setTeamName(response.name);
-            setTeamDescription(response.description);
             setNumberOfMembers(response.nbMembers);
           }));
+
+          const stream = fetch(`https://lichess.org/api/team/${teamId}/arena`, {headers: {Accept: 'application/x-ndjson'}});
+          stream
+          .then(readStream(onMessage))
+          .then(onComplete);        
         }
         catch(err) {
           console.log(err.message);
         }
       }}>Search</button>
       <h2>{`Team: ${teamName}`}</h2>
-      {/* <h2>{`Description: ${teamDescription}`}</h2> */}
       <h2>{`Live members: ${numberOfMembers}`}</h2>
       <h2>Next tournament in: </h2>
     </>
